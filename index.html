@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Voxel Valkyrie — 3-Form Transformation & Aerial Combat Simulator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body {
+    background: #0a0e17;
+    color: #e6eefc;
+    font-family: 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+  #game-canvas, #stack-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #stack-canvas {
+    display: none;
+    background: radial-gradient(circle at 50% 45%, #16243d 0%, #090d16 100%);
+  }
+  .hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 16px 20px;
+  }
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .panel {
+    background: rgba(12, 18, 30, 0.78);
+    border: 1px solid rgba(90, 145, 230, 0.35);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 10px 14px;
+    pointer-events: auto;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+  .title-box h1 {
+    font-size: 16px;
+    letter-spacing: 0.08em;
+    color: #7cc4ff;
+    margin-bottom: 4px;
+  }
+  .title-box .sub {
+    font-size: 12px;
+    color: #9bb3d8;
+  }
+  .btn-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  button {
+    background: rgba(24, 38, 64, 0.9);
+    color: #dce8ff;
+    border: 1px solid rgba(100, 160, 255, 0.4);
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  button:hover {
+    background: rgba(45, 75, 125, 0.95);
+    border-color: #82baff;
+  }
+  button.active {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border-color: #93c5fd;
+    color: #fff;
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+  }
+  button.enemy-active {
+    background: linear-gradient(135deg, #7e22ce, #581c87);
+    border-color: #d8b4fe;
+    color: #fff;
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.5);
+  }
+  button.sortie-btn {
+    background: linear-gradient(135deg, #dc2626, #991b1b);
+    border-color: #fca5a5;
+    color: #fff;
+    font-size: 13px;
+    padding: 8px 16px;
+  }
+  button.sortie-btn.in-combat {
+    background: linear-gradient(135deg, #059669, #065f46);
+    border-color: #6ee7b7;
+  }
+  .combat-hud {
+    position: absolute;
+    top: 84px;
+    left: 20px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .bar-wrap {
+    width: 220px;
+    background: rgba(10, 15, 25, 0.8);
+    border: 1px solid rgba(110, 165, 245, 0.35);
+    border-radius: 6px;
+    padding: 6px 10px;
+  }
+  .bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    margin-bottom: 4px;
+    color: #b8ccef;
+  }
+  .bar-track {
+    width: 100%;
+    height: 7px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    width: 100%;
+    transition: width 0.1s linear;
+  }
+  .hp-fill { background: linear-gradient(90deg, #38bdf8, #3b82f6); }
+  .boost-fill { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+  .enemy-fill { background: linear-gradient(90deg, #c084fc, #e11d48); }
+  .crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+    border: 1.5px solid rgba(110, 231, 183, 0.65);
+    border-radius: 50%;
+    display: none;
+    pointer-events: none;
+  }
+  .crosshair::before, .crosshair::after {
+    content: '';
+    position: absolute;
+    background: rgba(110, 231, 183, 0.75);
+  }
+  .crosshair::before { top: 50%; left: -8px; right: -8px; height: 1px; }
+  .crosshair::after { left: 50%; top: -8px; bottom: -8px; width: 1px; }
+  .bottom-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .controls-hint {
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: #a9bfe3;
+  }
+  .controls-hint kbd {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: monospace;
+    color: #fff;
+  }
+  #banner {
+    position: absolute;
+    top: 22%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: #fff;
+    text-shadow: 0 0 18px rgba(59, 130, 246, 0.9);
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+<canvas id="stack-canvas"></canvas>
+<div class="crosshair" id="crosshair"></div>
+<div id="banner"></div>
+
+<div class="hud">
+  <div class="top-bar">
+    <div class="panel title-box">
+      <h1>VOXEL VALKYRIE SIMULATOR</h1>
+      <div class="sub" id="status-text">MODE: HANGAR | UNIT: VALKYRIE VF-01 | FORM: FIGHTER</div>
+    </div>
+
+    <div class="panel btn-group">
+      <button id="btn-form-0" class="active" onclick="setForm(0)">[1] FIGHTER</button>
+      <button id="btn-form-1" onclick="setForm(1)">[2] GERWALK</button>
+      <button id="btn-form-2" onclick="setForm(2)">[3] ROBOT</button>
+      <button id="btn-unit" onclick="toggleUnit()">UNIT: 白/赤 バルキリー</button>
+      <button id="btn-view" onclick="toggleView()">VIEW: 3D VOXEL</button>
+      <button id="btn-slow" onclick="toggleSlowMo()">SLOW-MO: OFF</button>
+      <button id="btn-cam" onclick="toggleCamera()">CAM: ORBIT</button>
+      <button id="btn-sortie" class="sortie-btn" onclick="toggleSortie()">🚀 空戦出撃 / SORTIE</button>
+    </div>
+  </div>
+
+  <div class="combat-hud" id="combat-hud">
+    <div class="bar-wrap">
+      <div class="bar-label"><span>ARMOR (HP)</span><span id="hp-val">100%</span></div>
+      <div class="bar-track"><div class="bar-fill hp-fill" id="hp-bar"></div></div>
+    </div>
+    <div class="bar-wrap">
+      <div class="bar-label"><span>THRUSTER ENERGY</span><span id="boost-val">100%</span></div>
+      <div class="bar-track"><div class="bar-fill boost-fill" id="boost-bar"></div></div>
+    </div>
+    <div class="bar-wrap">
+      <div class="bar-label"><span id="wave-label">WAVE 1 — ENEMY ACE</span><span id="enemy-hp-val">100%</span></div>
+      <div class="bar-track"><div class="bar-fill enemy-fill" id="enemy-hp-bar"></div></div>
+    </div>
+    <div class="bar-wrap">
+      <div class="bar-label"><span>SCORE / KILLS</span><span id="score-val">0</span></div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="panel controls-hint">
+      <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 形態変形 &nbsp;|&nbsp;
+      <kbd>Tab</kbd> 順次変形 &nbsp;|&nbsp;
+      <kbd>W</kbd><kbd>S</kbd> ピッチ/前後 &nbsp;|&nbsp;
+      <kbd>A</kbd><kbd>D</kbd> 旋回/左右 &nbsp;|&nbsp;
+      <kbd>Shift</kbd> ブースト &nbsp;|&nbsp;
+      <kbd>Space</kbd>/左クリック メイン射撃 &nbsp;|&nbsp;
+      <kbd>E</kbd>/右クリック ミサイル &nbsp;|&nbsp;
+      ドラッグ: カメラ回転
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// =========================================================
+// AUDIO SYNTHESIZER (Web Audio API)
+// =========================================================
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playTransformSound(formIdx) {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    const base = [220, 310, 420][formIdx] || 280;
+    osc.frequency.setValueAtTime(140, now);
+    osc.frequency.exponentialRampToValueAtTime(base, now + 0.18);
+    osc.frequency.exponentialRampToValueAtTime(base * 0.75, now + 0.36);
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.4);
+  } catch (e) {}
+}
+function playShootSound(isMissile = false) {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = isMissile ? 'triangle' : 'square';
+    osc.frequency.setValueAtTime(isMissile ? 520 : 860, now);
+    osc.frequency.exponentialRampToValueAtTime(isMissile ? 110 : 180, now + (isMissile ? 0.24 : 0.08));
+    gain.gain.setValueAtTime(0.06, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (isMissile ? 0.25 : 0.09));
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + (isMissile ? 0.26 : 0.1));
+  } catch (e) {}
+}
+function playExplosionSound() {
+  try {
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    const bufferSize = audioCtx.sampleRate * 0.35;
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.35));
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(420, now);
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+    noise.start(now);
+  } catch (e) {}
+}
+
+// =========================================================
+// VOXEL MODEL DEFINITIONS (HERO & ENEMY x 3 FORMS)
+// =========================================================
+const HERO_PALETTE = {
+  1: 0xe6ebf5, 2: 0x9ba5b4, 3: 0xdc2d32, 4: 0x373c46,
+  5: 0x23aff0, 6: 0xa5ebff, 7: 0xffa01e, 8: 0xfff096, 9: 0x284182
+};
+const ENEMY_PALETTE = {
+  1: 0x2a2e38, 2: 0x181a20, 3: 0x9b2ddc, 4: 0x4b525f,
+  5: 0xff2d4b, 6: 0xff96aa, 7: 0xbe3cff, 8: 0xf5beff, 9: 0x8c192d
+};
+
+function createGrid(X, Y, Z) {
+  return { X, Y, Z, data: new Uint8Array(X * Y * Z) };
+}
+function setVoxel(g, x, y, z, c) {
+  if (x >= 0 && x < g.X && y >= 0 && y < g.Y && z >= 0 && z < g.Z) {
+    g.data[x + g.X * (y + g.Y * z)] = c;
+  }
+}
+function getVoxel(g, x, y, z) {
+  if (x >= 0 && x < g.X && y >= 0 && y < g.Y && z >= 0 && z < g.Z) {
+    return g.data[x + g.X * (y + g.Y * z)];
+  }
+  return 0;
+}
+function fillBox(g, x0, x1, y0, y1, z0, z1, c) {
+  for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++)
+    for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++)
+      for (let z = Math.min(z0, z1); z <= Math.max(z0, z1); z++)
+        setVoxel(g, x, y, z, c);
+}
+function fillSym(g, xo0, xo1, y0, y1, z0, z1, c) {
+  const cl = g.X / 2 - 1, cr = g.X / 2;
+  fillBox(g, cl - xo1, cl - xo0, y0, y1, z0, z1, c);
+  fillBox(g, cr + xo0, cr + xo1, y0, y1, z0, z1, c);
+}
+
+function buildHeroFighter() {
+  const g = createGrid(32, 36, 20);
+  fillSym(g, 0, 2, 4, 22, 6, 10, 1);
+  fillSym(g, 0, 2, 4, 22, 5, 5, 2);
+  fillSym(g, 0, 1, 23, 29, 6, 9, 1);
+  fillSym(g, 0, 0, 30, 34, 7, 8, 1);
+  fillSym(g, 0, 0, 6, 27, 10, 10, 3);
+  fillSym(g, 0, 0, 33, 34, 7, 8, 3);
+  fillSym(g, 0, 1, 18, 24, 11, 12, 5);
+  fillSym(g, 0, 0, 20, 23, 13, 13, 6);
+  fillSym(g, 1, 3, 2, 16, 4, 7, 2);
+  fillSym(g, 2, 3, 2, 14, 5, 7, 1);
+  fillSym(g, 2, 3, 1, 1, 5, 6, 4);
+  fillSym(g, 2, 3, 0, 0, 5, 6, 7);
+  for (let i = 0; i < 12; i++) {
+    const ys = 7 + i, ye = 17 - Math.floor(i / 3);
+    if (ys <= ye) fillSym(g, 3 + i, 3 + i, ys, ye, 8, 9, i < 10 ? 1 : 3);
+  }
+  fillSym(g, 5, 9, 11, 12, 9, 9, 3);
+  fillSym(g, 7, 7, 13, 21, 7, 7, 4);
+  for (let i = 0; i < 4; i++) fillSym(g, 2 + i, 2 + i, 23 + Math.floor(i/2), 26 - Math.floor(i/2), 8, 8, 1);
+  fillSym(g, 5, 5, 24, 25, 8, 8, 3);
+  for (let h = 0; h < 6; h++) fillSym(g, 3 + Math.floor(h/3), 3 + Math.floor(h/3), 3 + Math.floor(h/2), 9 - Math.floor(h/2), 10 + h, 10 + h, h < 4 ? 1 : 3);
+  return g;
+}
+
+function buildHeroGerwalk() {
+  const g = createGrid(32, 36, 28);
+  fillSym(g, 0, 2, 6, 23, 16, 20, 1);
+  fillSym(g, 0, 2, 6, 23, 15, 15, 2);
+  fillSym(g, 0, 1, 24, 30, 16, 19, 1);
+  fillSym(g, 0, 0, 31, 35, 17, 18, 1);
+  fillSym(g, 0, 0, 8, 28, 20, 20, 3);
+  fillSym(g, 0, 0, 34, 35, 17, 18, 3);
+  fillSym(g, 0, 1, 19, 25, 21, 22, 5);
+  fillSym(g, 0, 0, 21, 24, 23, 23, 6);
+  for (let i = 0; i < 12; i++) {
+    const ys = 9 + i, ye = 19 - Math.floor(i / 3);
+    if (ys <= ye) fillSym(g, 3 + i, 3 + i, ys, ye, 18, 19, i < 10 ? 1 : 3);
+  }
+  fillSym(g, 5, 9, 13, 14, 19, 19, 3);
+  for (let h = 0; h < 6; h++) fillSym(g, 3 + Math.floor(h/3), 3 + Math.floor(h/3), 5 + Math.floor(h/2), 11 - Math.floor(h/2), 20 + h, 20 + h, h < 4 ? 1 : 3);
+  fillSym(g, 4, 5, 14, 17, 11, 15, 1);
+  fillSym(g, 4, 5, 15, 23, 9, 11, 1);
+  fillSym(g, 4, 5, 19, 20, 11, 11, 3);
+  fillSym(g, 4, 5, 24, 25, 9, 11, 4);
+  fillSym(g, 0, 1, 22, 32, 9, 10, 4);
+  for (let s = 0; s < 6; s++) fillSym(g, 2, 4, 12 + s, 15 + s, 14 - s, 15 - s, 2);
+  fillSym(g, 2, 4, 16, 19, 7, 9, 4);
+  for (let s = 0; s < 7; s++) fillSym(g, 2, 4, 17 - s, 20 - s, 7 - s, 8 - s, 1);
+  fillSym(g, 3, 4, 14, 16, 3, 6, 3);
+  fillSym(g, 2, 4, 10, 16, 0, 1, 4);
+  fillSym(g, 2, 4, 14, 17, 1, 2, 9);
+  return g;
+}
+
+function buildHeroRobot() {
+  const g = createGrid(32, 24, 40);
+  fillSym(g, 2, 5, 9, 16, 0, 1, 4);
+  fillSym(g, 2, 5, 12, 16, 1, 2, 9);
+  fillSym(g, 2, 5, 10, 14, 3, 13, 1);
+  fillSym(g, 5, 5, 11, 13, 5, 11, 3);
+  fillSym(g, 3, 4, 14, 15, 11, 14, 9);
+  fillSym(g, 2, 4, 10, 14, 14, 20, 2);
+  fillSym(g, 0, 4, 9, 14, 20, 22, 1);
+  fillSym(g, 0, 1, 9, 15, 20, 23, 3);
+  fillSym(g, 0, 5, 9, 15, 23, 32, 1);
+  fillSym(g, 0, 2, 14, 16, 24, 31, 9);
+  fillSym(g, 0, 1, 15, 17, 25, 30, 5);
+  fillSym(g, 3, 4, 14, 16, 27, 31, 3);
+  fillSym(g, 1, 3, 6, 8, 22, 31, 2);
+  for (let i = 0; i < 8; i++) fillSym(g, 4 + i, 4 + i, 6, 7, 24 - i, 31 - i, i < 6 ? 1 : 3);
+  fillSym(g, 2, 2, 4, 6, 24, 32, 3);
+  fillSym(g, 6, 9, 10, 14, 29, 33, 1);
+  fillSym(g, 7, 9, 11, 13, 32, 33, 3);
+  fillSym(g, 6, 8, 10, 13, 24, 28, 2);
+  fillSym(g, 6, 9, 10, 14, 18, 23, 1);
+  fillSym(g, 9, 9, 11, 13, 19, 22, 3);
+  fillSym(g, 7, 8, 11, 13, 16, 17, 4);
+  fillSym(g, 0, 2, 10, 14, 33, 37, 1);
+  fillSym(g, 0, 1, 14, 15, 34, 35, 5);
+  fillSym(g, 0, 0, 11, 14, 37, 38, 3);
+  fillSym(g, 2, 2, 11, 12, 36, 39, 4);
+  return g;
+}
+
+function buildEnemyFighter() {
+  const g = createGrid(32, 36, 20);
+  fillSym(g, 0, 2, 4, 21, 6, 10, 1);
+  fillSym(g, 0, 2, 4, 21, 5, 5, 2);
+  fillSym(g, 0, 1, 22, 29, 6, 9, 1);
+  fillSym(g, 0, 0, 30, 35, 7, 8, 1);
+  fillSym(g, 0, 0, 5, 26, 10, 10, 3);
+  fillSym(g, 0, 0, 33, 35, 7, 8, 3);
+  fillSym(g, 0, 1, 17, 23, 11, 12, 5);
+  fillSym(g, 0, 0, 19, 22, 13, 13, 6);
+  fillSym(g, 2, 4, 2, 16, 4, 7, 2);
+  fillSym(g, 2, 4, 2, 14, 5, 7, 1);
+  fillSym(g, 2, 4, 1, 1, 5, 6, 4);
+  fillSym(g, 2, 4, 0, 0, 5, 6, 7);
+  for (let i = 0; i < 11; i++) {
+    const ys = 8 + Math.floor(i/2), ye = 15 + i;
+    fillSym(g, 4 + i, 4 + i, ys, ye, 8, 9, 1);
+    if (i >= 9) fillSym(g, 4 + i, 4 + i, ys - 2, ye + 3, 8, 9, 3);
+  }
+  fillSym(g, 6, 10, 12, 13, 9, 9, 3);
+  fillSym(g, 5, 8, 3, 6, 7, 7, 2);
+  for (let h = 0; h < 6; h++) fillSym(g, 3 + Math.floor(h/2), 3 + Math.floor(h/2), 2 + Math.floor(h/2), 8 - Math.floor(h/2), 10 + h, 10 + h, h < 4 ? 1 : 9);
+  return g;
+}
+
+function buildEnemyGerwalk() {
+  const g = createGrid(32, 36, 28);
+  fillSym(g, 0, 2, 6, 22, 16, 20, 1);
+  fillSym(g, 0, 2, 6, 22, 15, 15, 2);
+  fillSym(g, 0, 1, 23, 30, 16, 19, 1);
+  fillSym(g, 0, 0, 31, 35, 17, 18, 1);
+  fillSym(g, 0, 0, 7, 27, 20, 20, 3);
+  fillSym(g, 0, 0, 34, 35, 17, 18, 3);
+  fillSym(g, 0, 1, 18, 24, 21, 22, 5);
+  fillSym(g, 0, 0, 20, 23, 23, 23, 6);
+  for (let i = 0; i < 11; i++) {
+    const ys = 10 + Math.floor(i/2), ye = 17 + i;
+    fillSym(g, 4 + i, 4 + i, ys, ye, 18, 19, i < 9 ? 1 : 3);
+    if (i >= 9) fillSym(g, 4 + i, 4 + i, ys - 2, ye + 3, 18, 19, 3);
+  }
+  for (let h = 0; h < 6; h++) fillSym(g, 3 + Math.floor(h/2), 3 + Math.floor(h/2), 4 + Math.floor(h/2), 10 - Math.floor(h/2), 20 + h, 20 + h, h < 4 ? 1 : 9);
+  fillSym(g, 5, 6, 14, 17, 11, 15, 1);
+  fillSym(g, 5, 6, 15, 27, 9, 11, 2);
+  fillSym(g, 5, 6, 20, 24, 11, 11, 3);
+  fillSym(g, 5, 6, 28, 30, 10, 10, 5);
+  for (let s = 0; s < 6; s++) fillSym(g, 2, 4, 12 + s, 15 + s, 14 - s, 15 - s, 2);
+  fillSym(g, 2, 4, 16, 20, 7, 9, 4);
+  fillSym(g, 3, 3, 20, 21, 8, 9, 3);
+  for (let s = 0; s < 7; s++) fillSym(g, 2, 4, 17 - s, 20 - s, 7 - s, 8 - s, 1);
+  fillSym(g, 4, 4, 13, 16, 3, 6, 9);
+  fillSym(g, 2, 4, 10, 17, 0, 1, 4);
+  fillSym(g, 2, 2, 17, 18, 0, 1, 3);
+  fillSym(g, 4, 4, 17, 18, 0, 1, 3);
+  return g;
+}
+
+function buildEnemyRobot() {
+  const g = createGrid(32, 24, 40);
+  fillSym(g, 2, 5, 9, 16, 0, 1, 4);
+  fillSym(g, 2, 2, 16, 17, 0, 1, 3);
+  fillSym(g, 5, 5, 16, 17, 0, 1, 3);
+  fillSym(g, 2, 5, 10, 14, 3, 13, 1);
+  fillSym(g, 5, 5, 11, 13, 4, 12, 3);
+  fillSym(g, 3, 4, 14, 16, 11, 15, 9);
+  fillSym(g, 2, 4, 10, 14, 14, 20, 2);
+  fillSym(g, 0, 4, 9, 14, 20, 22, 1);
+  fillSym(g, 0, 1, 9, 15, 20, 23, 9);
+  fillSym(g, 0, 5, 9, 15, 23, 32, 1);
+  fillSym(g, 0, 2, 14, 16, 24, 31, 2);
+  fillSym(g, 0, 1, 15, 17, 25, 30, 5);
+  fillSym(g, 3, 4, 14, 16, 26, 31, 3);
+  fillSym(g, 1, 3, 6, 8, 22, 31, 2);
+  for (let i = 0; i < 9; i++) fillSym(g, 4 + i, 4 + i, 6, 7, 26 + Math.floor(i/2), 32 + i, i < 7 ? 1 : 3);
+  fillSym(g, 2, 2, 4, 6, 22, 30, 9);
+  fillSym(g, 6, 9, 10, 14, 29, 33, 1);
+  fillSym(g, 8, 10, 11, 13, 33, 35, 3);
+  fillSym(g, 6, 8, 10, 13, 24, 28, 2);
+  fillSym(g, 6, 9, 10, 14, 18, 23, 1);
+  fillSym(g, 9, 9, 11, 13, 18, 23, 9);
+  fillSym(g, 7, 8, 11, 13, 16, 17, 4);
+  fillSym(g, 0, 2, 10, 14, 33, 37, 1);
+  fillSym(g, 0, 1, 14, 15, 34, 35, 5);
+  fillSym(g, 2, 3, 12, 15, 36, 39, 3);
+  return g;
+}
+
+const MODELS = {
+  hero: [buildHeroFighter(), buildHeroGerwalk(), buildHeroRobot()],
+  enemy: [buildEnemyFighter(), buildEnemyGerwalk(), buildEnemyRobot()]
+};
+
+function extractSurfaceVoxels(grid, palette) {
+  const list = [];
+  for (let x = 0; x < grid.X; x++) {
+    for (let y = 0; y < grid.Y; y++) {
+      for (let z = 0; z < grid.Z; z++) {
+        const c = getVoxel(grid, x, y, z);
+        if (!c) continue;
+        if (getVoxel(grid,x-1,y,z) && getVoxel(grid,x+1,y,z) &&
+            getVoxel(grid,x,y-1,z) && getVoxel(grid,x,y+1,z) &&
+            getVoxel(grid,x,y,z-1) && getVoxel(grid,x,y,z+1)) continue;
+        list.push({
+          x: x - grid.X / 2 + 0.5,
+          y: z - grid.Z / 2 + 0.5,
+          z: -(y - grid.Y / 2 + 0.5),
+          color: palette[c]
+        });
+      }
+    }
+  }
+  return list;
+}
+
+const SURFACE_CACHE = {
+  hero: MODELS.hero.map(g => extractSurfaceVoxels(g, HERO_PALETTE)),
+  enemy: MODELS.enemy.map(g => extractSurfaceVoxels(g, ENEMY_PALETTE))
+};
+
+// =========================================================
+// THREE.JS SCENE & MORPHING VOXEL UNIT
+// =========================================================
+const canvas = document.getElementById('game-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1324);
+scene.fog = new THREE.FogExp2(0x0b1324, 0.0022);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1200);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.72);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xfff5e6, 0.95);
+dirLight.position.set(40, 80, 50);
+scene.add(dirLight);
+const rimLight = new THREE.DirectionalLight(0x4da6ff, 0.45);
+rimLight.position.set(-50, 20, -60);
+scene.add(rimLight);
+
+// Hangar floor & Arena sea/clouds
+const hangarGrid = new THREE.GridHelper(120, 30, 0x3b82f6, 0x1e293b);
+hangarGrid.position.y = -20;
+scene.add(hangarGrid);
+
+const seaGeo = new THREE.PlaneGeometry(3000, 3000, 32, 32);
+seaGeo.rotateX(-Math.PI / 2);
+const seaMat = new THREE.MeshLambertMaterial({ color: 0x0e2a47 });
+const seaMesh = new THREE.Mesh(seaGeo, seaMat);
+seaMesh.position.y = -180;
+seaMesh.visible = false;
+scene.add(seaMesh);
+
+const cloudGroup = new THREE.Group();
+const cloudGeo = new THREE.BoxGeometry(28, 6, 18);
+const cloudMat = new THREE.MeshLambertMaterial({ color: 0xdbeafe, transparent: true, opacity: 0.45 });
+for (let i = 0; i < 65; i++) {
+  const m = new THREE.Mesh(cloudGeo, cloudMat);
+  m.position.set((Math.random() - 0.5) * 1400, -40 + Math.random() * 220, (Math.random() - 0.5) * 1400);
+  m.scale.set(0.7 + Math.random() * 1.8, 0.6 + Math.random(), 0.7 + Math.random() * 1.8);
+  cloudGroup.add(m);
+}
+cloudGroup.visible = false;
+scene.add(cloudGroup);
+
+const MAX_INSTANCES = 3600;
+const boxGeo = new THREE.BoxGeometry(0.96, 0.96, 0.96);
+const boxMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+
+function createMorphingUnit(unitKey) {
+  const mesh = new THREE.InstancedMesh(boxGeo, boxMat, MAX_INSTANCES);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const group = new THREE.Group();
+  group.add(mesh);
+  scene.add(group);
+  return {
+    unitKey,
+    group,
+    mesh,
+    currentForm: 0,
+    targetForm: 0,
+    morphT: 1.0,
+    fromVoxels: SURFACE_CACHE[unitKey][0],
+    toVoxels: SURFACE_CACHE[unitKey][0]
+  };
+}
+
+const playerUnit = createMorphingUnit('hero');
+const enemyUnit = createMorphingUnit('enemy');
+enemyUnit.group.visible = false;
+
+const dummy = new THREE.Object3D();
+const tmpColor = new THREE.Color();
+
+function updateMorphingUnit(unit, dt, slowMo) {
+  const speed = slowMo ? 0.65 : 2.6;
+  if (unit.morphT < 1.0) {
+    unit.morphT = Math.min(1.0, unit.morphT + dt * speed);
+  }
+  const t = unit.morphT * unit.morphT * (3 - 2 * unit.morphT);
+  const fromList = unit.fromVoxels;
+  const toList = unit.toVoxels;
+  const count = Math.max(fromList.length, toList.length);
+
+  for (let i = 0; i < MAX_INSTANCES; i++) {
+    if (i >= count) {
+      dummy.position.set(0, 0, 0);
+      dummy.scale.set(0, 0, 0);
+      dummy.updateMatrix();
+      unit.mesh.setMatrixAt(i, dummy.matrix);
+      continue;
+    }
+    const a = fromList[i % fromList.length];
+    const b = toList[i % toList.length];
+    const scA = i < fromList.length ? 1 : 0.01;
+    const scB = i < toList.length ? 1 : 0.01;
+    const sc = scA + (scB - scA) * t;
+
+    dummy.position.set(
+      a.x + (b.x - a.x) * t,
+      a.y + (b.y - a.y) * t,
+      a.z + (b.z - a.z) * t
+    );
+    dummy.scale.set(sc, sc, sc);
+    dummy.updateMatrix();
+    unit.mesh.setMatrixAt(i, dummy.matrix);
+
+    tmpColor.setHex(t < 0.5 ? a.color : b.color);
+    unit.mesh.setColorAt(i, tmpColor);
+  }
+  unit.mesh.instanceMatrix.needsUpdate = true;
+  if (unit.mesh.instanceColor) unit.mesh.instanceColor.needsUpdate = true;
+}
+
+function triggerTransform(unit, newForm, playSfx = false) {
+  if (unit.targetForm === newForm && unit.morphT >= 1.0) return;
+  unit.fromVoxels = SURFACE_CACHE[unit.unitKey][unit.targetForm];
+  unit.toVoxels = SURFACE_CACHE[unit.unitKey][newForm];
+  unit.targetForm = newForm;
+  unit.morphT = 0.0;
+  if (playSfx) playTransformSound(newForm);
+}
+
+// =========================================================
+// GAME & SIMULATOR STATE
+// =========================================================
+let playerUnitKey = 'hero';
+let inSortie = false;
+let isSpriteStackView = false;
+let slowMo = false;
+let orbitCam = true;
+let camYaw = 0.65, camPitch = 0.32, camDist = 52;
+let isDragging = false, lastMouseX = 0, lastMouseY = 0;
+
+let playerHP = 100, playerBoost = 100, score = 0, wave = 1;
+let enemyHP = 100, enemyMaxHP = 100, enemyAiTimer = 0, enemyFireTimer = 0;
+let fireCooldown = 0, missileCooldown = 0;
+
+const bullets = [];
+const particles = [];
+const keys = {};
+
+const FORM_NAMES = ['FIGHTER', 'GERWALK', 'ROBOT'];
+
+function showBanner(text) {
+  const el = document.getElementById('banner');
+  el.textContent = text;
+  el.style.opacity = '1';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.opacity = '0'; }, 1600);
+}
+
+function updateStatusText() {
+  const uName = playerUnitKey === 'hero' ? 'VALKYRIE VF-01 (白/赤)' : 'DARK STEALTH ACE (黒/紫)';
+  const mName = inSortie ? 'AERIAL COMBAT' : 'HANGAR';
+  document.getElementById('status-text').textContent =
+    `MODE: ${mName} | UNIT: ${uName} | FORM: ${FORM_NAMES[playerUnit.targetForm]}`;
+}
+
+window.setForm = function(idx) {
+  triggerTransform(playerUnit, idx, true);
+  [0, 1, 2].forEach(i => {
+    document.getElementById(`btn-form-${i}`).classList.toggle('active', i === idx);
+  });
+  updateStatusText();
+};
+
+window.toggleUnit = function() {
+  playerUnitKey = playerUnitKey === 'hero' ? 'enemy' : 'hero';
+  const enemyKey = playerUnitKey === 'hero' ? 'enemy' : 'hero';
+  playerUnit.unitKey = playerUnitKey;
+  enemyUnit.unitKey = enemyKey;
+  triggerTransform(playerUnit, playerUnit.targetForm, true);
+  triggerTransform(enemyUnit, enemyUnit.targetForm, false);
+
+  const btn = document.getElementById('btn-unit');
+  btn.textContent = playerUnitKey === 'hero' ? 'UNIT: 白/赤 バルキリー' : 'UNIT: 黒/紫 敵エース機';
+  btn.classList.toggle('enemy-active', playerUnitKey === 'enemy');
+  updateStatusText();
+};
+
+window.toggleView = function() {
+  isSpriteStackView = !isSpriteStackView;
+  document.getElementById('game-canvas').style.display = isSpriteStackView ? 'none' : 'block';
+  document.getElementById('stack-canvas').style.display = isSpriteStackView ? 'block' : 'none';
+  const btn = document.getElementById('btn-view');
+  btn.textContent = isSpriteStackView ? 'VIEW: SPRITE STACK' : 'VIEW: 3D VOXEL';
+  btn.classList.toggle('active', isSpriteStackView);
+};
+
+window.toggleSlowMo = function() {
+  slowMo = !slowMo;
+  const btn = document.getElementById('btn-slow');
+  btn.textContent = slowMo ? 'SLOW-MO: ON' : 'SLOW-MO: OFF';
+  btn.classList.toggle('active', slowMo);
+};
+
+window.toggleCamera = function() {
+  orbitCam = !orbitCam;
+  const btn = document.getElementById('btn-cam');
+  btn.textContent = orbitCam ? 'CAM: ORBIT' : 'CAM: CHASE';
+};
+
+function spawnWave(w) {
+  wave = w;
+  enemyMaxHP = 80 + w * 40;
+  enemyHP = enemyMaxHP;
+  const angle = Math.random() * Math.PI * 2;
+  enemyUnit.group.position.set(Math.cos(angle) * 220, 20 + Math.random() * 40, Math.sin(angle) * 220);
+  enemyUnit.group.visible = true;
+  triggerTransform(enemyUnit, 0, false);
+  document.getElementById('wave-label').textContent = `WAVE ${wave} — ENEMY ACE`;
+  showBanner(`WAVE ${wave} — TARGET ENGAGED`);
+}
+
+window.toggleSortie = function() {
+  inSortie = !inSortie;
+  const btn = document.getElementById('btn-sortie');
+  const combatHud = document.getElementById('combat-hud');
+  const crosshair = document.getElementById('crosshair');
+
+  if (inSortie) {
+    btn.textContent = '🏠 ハンガーへ帰還 / HANGAR';
+    btn.classList.add('in-combat');
+    combatHud.style.display = 'flex';
+    crosshair.style.display = 'block';
+    hangarGrid.visible = false;
+    seaMesh.visible = true;
+    cloudGroup.visible = true;
+    scene.background = new THREE.Color(0x16325c);
+    scene.fog = new THREE.FogExp2(0x16325c, 0.0012);
+    orbitCam = false;
+    document.getElementById('btn-cam').textContent = 'CAM: CHASE';
+    playerUnit.group.position.set(0, 10, 0);
+    playerUnit.group.rotation.set(0, 0, 0);
+    playerHP = 100;
+    playerBoost = 100;
+    score = 0;
+    spawnWave(1);
+  } else {
+    btn.textContent = '🚀 空戦出撃 / SORTIE';
+    btn.classList.remove('in-combat');
+    combatHud.style.display = 'none';
+    crosshair.style.display = 'none';
+    hangarGrid.visible = true;
+    seaMesh.visible = false;
+    cloudGroup.visible = false;
+    enemyUnit.group.visible = false;
+    scene.background = new THREE.Color(0x0b1324);
+    scene.fog = new THREE.FogExp2(0x0b1324, 0.0022);
+    orbitCam = true;
+    document.getElementById('btn-cam').textContent = 'CAM: ORBIT';
+    playerUnit.group.position.set(0, 0, 0);
+    playerUnit.group.rotation.set(0, 0, 0);
+  }
+  updateStatusText();
+};
+
+// =========================================================
+// WEAPONS & PARTICLES
+// =========================================================
+const bulletGeo = new THREE.BoxGeometry(0.8, 0.8, 3.2);
+function spawnProjectile(origin, dir, isPlayer, isMissile) {
+  const mat = new THREE.MeshBasicMaterial({
+    color: isMissile ? 0xffaa00 : (isPlayer ? 0x38bdf8 : 0xf43f5e)
+  });
+  const mesh = new THREE.Mesh(bulletGeo, mat);
+  mesh.position.copy(origin);
+  mesh.lookAt(origin.clone().add(dir));
+  scene.add(mesh);
+  bullets.push({
+    mesh,
+    vel: dir.clone().multiplyScalar(isMissile ? 190 : 280),
+    isPlayer,
+    isMissile,
+    life: isMissile ? 3.2 : 1.6
+  });
+}
+
+function spawnExplosion(pos, colorHex, count = 24) {
+  playExplosionSound();
+  for (let i = 0; i < count; i++) {
+    const m = new THREE.Mesh(boxGeo, new THREE.MeshBasicMaterial({ color: colorHex }));
+    m.position.copy(pos);
+    m.scale.setScalar(1.2 + Math.random() * 1.6);
+    scene.add(m);
+    particles.push({
+      mesh: m,
+      vel: new THREE.Vector3((Math.random()-0.5)*70, (Math.random()-0.5)*70, (Math.random()-0.5)*70),
+      life: 0.7 + Math.random() * 0.5
+    });
+  }
+}
+
+function firePlayerPrimary() {
+  if (!inSortie || fireCooldown > 0) return;
+  const form = playerUnit.targetForm;
+  fireCooldown = form === 0 ? 0.11 : (form === 1 ? 0.16 : 0.22);
+  playShootSound(false);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(playerUnit.group.quaternion);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(playerUnit.group.quaternion);
+  const basePos = playerUnit.group.position.clone().addScaledVector(forward, 14);
+
+  if (form === 0) {
+    spawnProjectile(basePos.clone().addScaledVector(right, -5), forward, true, false);
+    spawnProjectile(basePos.clone().addScaledVector(right, 5), forward, true, false);
+  } else if (form === 1) {
+    [-0.12, 0, 0.12].forEach(spread => {
+      const d = forward.clone().addScaledVector(right, spread).normalize();
+      spawnProjectile(basePos, d, true, false);
+    });
+  } else {
+    spawnProjectile(basePos.clone().addScaledVector(right, -6), forward, true, false);
+    spawnProjectile(basePos.clone().addScaledVector(right, 6), forward, true, false);
+    spawnProjectile(basePos, forward, true, false);
+  }
+}
+
+function firePlayerMissile() {
+  if (!inSortie || missileCooldown > 0) return;
+  missileCooldown = 1.1;
+  playShootSound(true);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(playerUnit.group.quaternion);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(playerUnit.group.quaternion);
+  [-8, 8].forEach(offset => {
+    const pos = playerUnit.group.position.clone().addScaledVector(right, offset);
+    spawnProjectile(pos, forward, true, true);
+  });
+}
+
+// =========================================================
+// 2.5D SPRITE STACKING RENDERER (CANVAS 2D)
+// =========================================================
+const stackCanvas = document.getElementById('stack-canvas');
+const stackCtx = stackCanvas.getContext('2d');
+const sliceCanvases = { hero: [], enemy: [] };
+
+function prebakeSliceCanvases() {
+  ['hero', 'enemy'].forEach(uKey => {
+    const pal = uKey === 'hero' ? HERO_PALETTE : ENEMY_PALETTE;
+    sliceCanvases[uKey] = MODELS[uKey].map(grid => {
+      const slices = [];
+      for (let z = 0; z < grid.Z; z++) {
+        const c = document.createElement('canvas');
+        c.width = grid.X;
+        c.height = grid.Y;
+        const ctx = c.getContext('2d');
+        for (let x = 0; x < grid.X; x++) {
+          for (let y = 0; y < grid.Y; y++) {
+            const v = getVoxel(grid, x, y, z);
+            if (v) {
+              const hex = pal[v].toString(16).padStart(6, '0');
+              ctx.fillStyle = `#${hex}`;
+              ctx.fillRect(x, grid.Y - 1 - y, 1, 1);
+            }
+          }
+        }
+        slices.push(c);
+      }
+      return slices;
+    });
+  });
+}
+prebakeSliceCanvases();
+
+function renderSpriteStackMode(time) {
+  stackCanvas.width = window.innerWidth;
+  stackCanvas.height = window.innerHeight;
+  stackCtx.imageSmoothingEnabled = false;
+
+  const slices = sliceCanvases[playerUnitKey][playerUnit.targetForm];
+  const cx = stackCanvas.width / 2;
+  const cy = stackCanvas.height / 2 + 50;
+  const rotAngle = inSortie ? -playerUnit.group.rotation.y : time * 0.7;
+  const scale = 7;
+
+  // Draw top sheet strip
+  const sheetY = 92;
+  const miniScale = 1.6;
+  const totalSheetW = slices.length * (slices[0].width * miniScale + 4);
+  let sx = Math.max(20, (stackCanvas.width - totalSheetW) / 2);
+  slices.forEach((sc, idx) => {
+    stackCtx.strokeStyle = 'rgba(100,160,255,0.35)';
+    stackCtx.strokeRect(sx - 1, sheetY - 1, sc.width * miniScale + 2, sc.height * miniScale + 2);
+    stackCtx.drawImage(sc, sx, sheetY, sc.width * miniScale, sc.height * miniScale);
+    sx += sc.width * miniScale + 4;
+  });
+
+  // Draw 2.5D stacked sprite
+  slices.forEach((sc, z) => {
+    stackCtx.save();
+    stackCtx.translate(cx, cy - z * (scale * 0.85));
+    stackCtx.rotate(rotAngle);
+    stackCtx.scale(scale, scale * 0.72);
+    stackCtx.drawImage(sc, -sc.width / 2, -sc.height / 2);
+    stackCtx.restore();
+  });
+}
+
+// =========================================================
+// INPUT HANDLERS
+// =========================================================
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Digit1') setForm(0);
+  if (e.code === 'Digit2') setForm(1);
+  if (e.code === 'Digit3') setForm(2);
+  if (e.code === 'Tab') {
+    e.preventDefault();
+    setForm((playerUnit.targetForm + 1) % 3);
+  }
+  if (e.code === 'KeyE') firePlayerMissile();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+window.addEventListener('mousedown', e => {
+  if (e.target.tagName === 'BUTTON') return;
+  if (e.button === 0) {
+    isDragging = true;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    if (inSortie) firePlayerPrimary();
+  } else if (e.button === 2) {
+    firePlayerMissile();
+  }
+});
+window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  camYaw -= (e.clientX - lastMouseX) * 0.008;
+  camPitch = Math.max(-0.4, Math.min(1.2, camPitch + (e.clientY - lastMouseY) * 0.008));
+  lastMouseX = e.clientX;
+  lastMouseY = e.clientY;
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+window.addEventListener('wheel', e => {
+  camDist = Math.max(24, Math.min(110, camDist + e.deltaY * 0.04));
+});
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// =========================================================
+// MAIN SIMULATION LOOP
+// =========================================================
+let lastTime = performance.now();
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+
+  updateMorphingUnit(playerUnit, dt, slowMo);
+  updateMorphingUnit(enemyUnit, dt, slowMo);
+
+  if (fireCooldown > 0) fireCooldown -= dt;
+  if (missileCooldown > 0) missileCooldown -= dt;
+
+  if (!inSortie) {
+    if (!isDragging) playerUnit.group.rotation.y += dt * 0.45;
+  } else {
+    // Player flight & mech controls
+    const form = playerUnit.targetForm;
+    const boosting = keys['ShiftLeft'] && playerBoost > 5;
+    if (boosting) playerBoost = Math.max(0, playerBoost - dt * 32);
+    else playerBoost = Math.min(100, playerBoost + dt * 18);
+
+    const baseSpeed = form === 0 ? 78 : (form === 1 ? 42 : 24);
+    const speed = boosting ? baseSpeed * 1.75 : baseSpeed;
+    const turnRate = form === 0 ? 1.5 : 2.1;
+
+    if (keys['KeyA'] || keys['ArrowLeft']) playerUnit.group.rotation.y += turnRate * dt;
+    if (keys['KeyD'] || keys['ArrowRight']) playerUnit.group.rotation.y -= turnRate * dt;
+
+    if (form === 0) {
+      if (keys['KeyW'] || keys['ArrowUp']) playerUnit.group.rotation.x -= 1.2 * dt;
+      if (keys['KeyS'] || keys['ArrowDown']) playerUnit.group.rotation.x += 1.2 * dt;
+      playerUnit.group.rotation.x = Math.max(-0.85, Math.min(0.85, playerUnit.group.rotation.x));
+    } else {
+      playerUnit.group.rotation.x *= 0.9;
+      if (keys['KeyW'] || keys['ArrowUp']) playerUnit.group.position.y += 38 * dt;
+      if (keys['KeyS'] || keys['ArrowDown']) playerUnit.group.position.y -= 38 * dt;
+    }
+
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(playerUnit.group.quaternion);
+    playerUnit.group.position.addScaledVector(forward, speed * dt);
+    playerUnit.group.position.y = Math.max(-140, Math.min(260, playerUnit.group.position.y));
+
+    if (keys['Space']) firePlayerPrimary();
+
+    // Enemy AI
+    if (enemyUnit.group.visible) {
+      const toPlayer = playerUnit.group.position.clone().sub(enemyUnit.group.position);
+      const dist = toPlayer.length();
+      enemyUnit.group.lookAt(playerUnit.group.position);
+      enemyUnit.group.rotateY(Math.PI);
+
+      enemyAiTimer += dt;
+      if (enemyAiTimer > 3.5) {
+        enemyAiTimer = 0;
+        const desiredForm = dist > 160 ? 0 : (dist > 85 ? 1 : 2);
+        triggerTransform(enemyUnit, desiredForm, false);
+      }
+      const enemySpeed = dist > 90 ? 52 : 18;
+      enemyUnit.group.position.addScaledVector(toPlayer.normalize(), enemySpeed * dt);
+
+      enemyFireTimer += dt;
+      if (enemyFireTimer > 1.25 && dist < 320) {
+        enemyFireTimer = 0;
+        const shotDir = playerUnit.group.position.clone().sub(enemyUnit.group.position).normalize();
+        spawnProjectile(enemyUnit.group.position.clone(), shotDir, false, false);
+      }
+    }
+
+    // Update projectiles
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      b.life -= dt;
+      if (b.isMissile && b.isPlayer && enemyUnit.group.visible) {
+        const desired = enemyUnit.group.position.clone().sub(b.mesh.position).normalize();
+        b.vel.lerp(desired.multiplyScalar(190), dt * 4.5);
+        b.mesh.lookAt(b.mesh.position.clone().add(b.vel));
+      }
+      b.mesh.position.addScaledVector(b.vel, dt);
+
+      let hit = false;
+      if (b.isPlayer && enemyUnit.group.visible && b.mesh.position.distanceTo(enemyUnit.group.position) < 16) {
+        enemyHP -= b.isMissile ? 32 : 10;
+        hit = true;
+        spawnExplosion(b.mesh.position, 0xc084fc, 6);
+        if (enemyHP <= 0) {
+          spawnExplosion(enemyUnit.group.position, 0xff2d4b, 38);
+          score += 100 * wave;
+          spawnWave(wave + 1);
+        }
+      } else if (!b.isPlayer && b.mesh.position.distanceTo(playerUnit.group.position) < 14) {
+        playerHP = Math.max(0, playerHP - 8);
+        hit = true;
+        spawnExplosion(b.mesh.position, 0x38bdf8, 6);
+        if (playerHP <= 0) {
+          showBanner('UNIT DAMAGED — EMERGENCY REPAIR');
+          playerHP = 100;
+        }
+      }
+
+      if (hit || b.life <= 0) {
+        scene.remove(b.mesh);
+        bullets.splice(i, 1);
+      }
+    }
+
+    // HUD updates
+    document.getElementById('hp-bar').style.width = `${playerHP}%`;
+    document.getElementById('hp-val').textContent = `${Math.round(playerHP)}%`;
+    document.getElementById('boost-bar').style.width = `${playerBoost}%`;
+    document.getElementById('boost-val').textContent = `${Math.round(playerBoost)}%`;
+    const ePct = Math.max(0, Math.round((enemyHP / enemyMaxHP) * 100));
+    document.getElementById('enemy-hp-bar').style.width = `${ePct}%`;
+    document.getElementById('enemy-hp-val').textContent = `${ePct}%`;
+    document.getElementById('score-val').textContent = score;
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.mesh.scale.multiplyScalar(0.94);
+    if (p.life <= 0) {
+      scene.remove(p.mesh);
+      particles.splice(i, 1);
+    }
+  }
+
+  // Camera update
+  if (orbitCam || !inSortie) {
+    const target = playerUnit.group.position;
+    camera.position.set(
+      target.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist,
+      target.y + Math.sin(camPitch) * camDist + 4,
+      target.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist
+    );
+    camera.lookAt(target);
+  } else {
+    const offset = new THREE.Vector3(0, 14, 46).applyQuaternion(playerUnit.group.quaternion);
+    const desiredCam = playerUnit.group.position.clone().add(offset);
+    camera.position.lerp(desiredCam, Math.min(1, dt * 8));
+    const lookTarget = playerUnit.group.position.clone().add(
+      new THREE.Vector3(0, 3, -40).applyQuaternion(playerUnit.group.quaternion)
+    );
+    camera.lookAt(lookTarget);
+  }
+
+  if (isSpriteStackView) {
+    renderSpriteStackMode(now / 1000);
+  } else {
+    renderer.render(scene, camera);
+  }
+}
+requestAnimationFrame(animate);
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "cdf4ee53507948e4a412f503875833cd"}'></script>
+</body>
+</html>
