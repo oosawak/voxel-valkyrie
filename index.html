@@ -104,6 +104,17 @@
     background: linear-gradient(135deg, #059669, #065f46);
     border-color: #6ee7b7;
   }
+  select {
+    background: rgba(24, 38, 64, 0.9);
+    color: #dce8ff;
+    border: 1px solid rgba(100, 160, 255, 0.4);
+    border-radius: 6px;
+    padding: 7px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    max-width: 210px;
+  }
   .combat-hud {
     position: absolute;
     top: 84px;
@@ -212,10 +223,13 @@
     </div>
 
     <div class="panel btn-group">
+      <span id="form-btns">
       <button id="btn-form-0" class="active" onclick="setForm(0)">[1] FIGHTER</button>
       <button id="btn-form-1" onclick="setForm(1)">[2] GERWALK</button>
       <button id="btn-form-2" onclick="setForm(2)">[3] ROBOT</button>
-      <button id="btn-unit" onclick="toggleUnit()">UNIT: 白/赤 バルキリー</button>
+      </span>
+      <select id="unit-select" onchange="selectUnit(this.value)"></select>
+      <button id="btn-pose" onclick="cyclePose()">ポーズ: なし</button>
       <button id="btn-view" onclick="toggleView()">VIEW: 3D VOXEL</button>
       <button id="btn-slow" onclick="toggleSlowMo()">SLOW-MO: OFF</button>
       <button id="btn-cam" onclick="toggleCamera()">CAM: ORBIT</button>
@@ -256,6 +270,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="models-extra.js"></script>
 <script>
 // =========================================================
 // AUDIO SYNTHESIZER (Web Audio API)
@@ -568,6 +583,57 @@ const SURFACE_CACHE = {
 };
 
 // =========================================================
+// 追加モデル（データ駆動）: models-extra.js の window.EXTRA_MODELS を
+// MODELS / SURFACE_CACHE / UNIT_INFO へ登録する。
+// 新しいモデルはデータファイルに1件足すだけで増やせる（.vox 由来）。
+// =========================================================
+const UNIT_INFO = {
+  hero: { name: 'VALKYRIE VF-01 (白/赤)', formNames: ['FIGHTER', 'GERWALK', 'ROBOT'] },
+  enemy: { name: 'DARK STEALTH ACE (黒/紫)', formNames: ['FIGHTER', 'GERWALK', 'ROBOT'] }
+};
+const PART_CACHE = {};
+function gridFromQuads(dims, dataB64) {
+  const g = createGrid(dims[0], dims[1], dims[2]);
+  const bin = atob(dataB64);
+  for (let i = 0; i + 3 < bin.length; i += 4) {
+    setVoxel(g, bin.charCodeAt(i), bin.charCodeAt(i + 1), bin.charCodeAt(i + 2), bin.charCodeAt(i + 3));
+  }
+  return g;
+}
+// ロボット形態のボクセルを位置から脚・腕・前腕に分け、関節の回転中心を返す
+function computeParts(list) {
+  let minY = 1e9, maxY = -1e9, minX = 1e9, maxX = -1e9;
+  for (const v of list) {
+    if (v.y < minY) minY = v.y;
+    if (v.y > maxY) maxY = v.y;
+    if (v.x < minX) minX = v.x;
+    if (v.x > maxX) maxX = v.x;
+  }
+  const H = maxY - minY, W = maxX - minX;
+  const hipY = minY + H * 0.40, shoulderY = minY + H * 0.80, elbowY = minY + H * 0.58;
+  const armX = W * 0.30;
+  return list.map(v => {
+    if (v.y < hipY) return { part: v.x < 0 ? 'legL' : 'legR', py: hipY };
+    if (Math.abs(v.x) > armX && v.y < shoulderY) {
+      const side = v.x < 0 ? 'L' : 'R';
+      if (v.y >= elbowY) return { part: 'arm' + side, py: shoulderY };
+      return { part: 'fore' + side, py: shoulderY, ey: elbowY };
+    }
+    return null;
+  });
+}
+if (window.EXTRA_MODELS) {
+  for (const m of window.EXTRA_MODELS) {
+    const pal = {};
+    for (const k in m.palette) pal[k] = m.palette[k];
+    MODELS[m.key] = m.forms.map(f => gridFromQuads(f.dims, f.data));
+    SURFACE_CACHE[m.key] = MODELS[m.key].map(g => extractSurfaceVoxels(g, pal));
+    UNIT_INFO[m.key] = { name: m.name + 'ロボット', formNames: m.formNames };
+    PART_CACHE[m.key] = [null, computeParts(SURFACE_CACHE[m.key][1])];
+  }
+}
+
+// =========================================================
 // THREE.JS SCENE & MORPHING VOXEL UNIT
 // =========================================================
 const canvas = document.getElementById('game-canvas');
@@ -643,6 +709,39 @@ enemyUnit.group.visible = false;
 const dummy = new THREE.Object3D();
 const tmpColor = new THREE.Color();
 
+// 関節ポーズ: 0=なし 1=歩行（脚と腕を前後に振る） 2=L字（前腕を肘で前に曲げる）
+let poseMode = 0;
+const POSE_LABELS = ['ポーズ: なし', 'ポーズ: 歩行', 'ポーズ: L字'];
+function rotXAround(y, z, py, pz, ang) {
+  const c = Math.cos(ang), s = Math.sin(ang);
+  const dy = y - py, dz = z - pz;
+  return [py + dy * c - dz * s, pz + dy * s + dz * c];
+}
+function posePoint(p, part, t) {
+  const ph = performance.now() / 1000 * 7.0;
+  let y = p.y, z = p.z;
+  if (part.part === 'legL' || part.part === 'legR') {
+    if (poseMode !== 1) return p;
+    const ang = (part.part === 'legL' ? Math.sin(ph) : -Math.sin(ph)) * 0.45 * t;
+    [y, z] = rotXAround(y, z, part.py, 0, ang);
+    return { x: p.x, y, z };
+  }
+  const side = part.part.endsWith('L') ? 1 : -1;
+  let swing = 0;
+  if (poseMode === 1) swing = -side * Math.sin(ph) * 0.30 * t;
+  else if (poseMode === 2) swing = 0.12 * t;
+  [y, z] = rotXAround(y, z, part.py, 0, swing);
+  if (part.part.startsWith('fore')) {
+    let bend = 0;
+    if (poseMode === 1) bend = (0.55 + 0.15 * side * Math.sin(ph)) * t;
+    else if (poseMode === 2) bend = 1.5 * t;
+    let ey = part.ey, ez = 0;
+    [ey, ez] = rotXAround(ey, ez, part.py, 0, swing);
+    [y, z] = rotXAround(y, z, ey, ez, bend);
+  }
+  return { x: p.x, y, z };
+}
+
 function updateMorphingUnit(unit, dt, slowMo) {
   const speed = slowMo ? 0.65 : 2.6;
   if (unit.morphT < 1.0) {
@@ -667,10 +766,19 @@ function updateMorphingUnit(unit, dt, slowMo) {
     const scB = i < toList.length ? 1 : 0.01;
     const sc = scA + (scB - scA) * t;
 
+    let bx = b.x, by = b.y, bz = b.z;
+    if (poseMode > 0) {
+      const pc = PART_CACHE[unit.unitKey];
+      const plist = pc ? pc[unit.targetForm] : null;
+      if (plist) {
+        const part = plist[i % toList.length];
+        if (part) { const pp = posePoint(b, part, t); bx = pp.x; by = pp.y; bz = pp.z; }
+      }
+    }
     dummy.position.set(
-      a.x + (b.x - a.x) * t,
-      a.y + (b.y - a.y) * t,
-      a.z + (b.z - a.z) * t
+      a.x + (bx - a.x) * t,
+      a.y + (by - a.y) * t,
+      a.z + (bz - a.z) * t
     );
     dummy.scale.set(sc, sc, sc);
     dummy.updateMatrix();
@@ -722,35 +830,73 @@ function showBanner(text) {
 }
 
 function updateStatusText() {
-  const uName = playerUnitKey === 'hero' ? 'VALKYRIE VF-01 (白/赤)' : 'DARK STEALTH ACE (黒/紫)';
+  const info = UNIT_INFO[playerUnitKey];
   const mName = inSortie ? 'AERIAL COMBAT' : 'HANGAR';
   document.getElementById('status-text').textContent =
-    `MODE: ${mName} | UNIT: ${uName} | FORM: ${FORM_NAMES[playerUnit.targetForm]}`;
+    `MODE: ${mName} | UNIT: ${info.name} | FORM: ${info.formNames[playerUnit.targetForm]}`;
 }
 
 window.setForm = function(idx) {
+  if (idx >= SURFACE_CACHE[playerUnitKey].length) return;
   triggerTransform(playerUnit, idx, true);
-  [0, 1, 2].forEach(i => {
-    document.getElementById(`btn-form-${i}`).classList.toggle('active', i === idx);
+  UNIT_INFO[playerUnitKey].formNames.forEach((_, i) => {
+    const b = document.getElementById(`btn-form-${i}`);
+    if (b) b.classList.toggle('active', i === idx);
   });
   updateStatusText();
 };
 
-window.toggleUnit = function() {
-  playerUnitKey = playerUnitKey === 'hero' ? 'enemy' : 'hero';
-  const enemyKey = playerUnitKey === 'hero' ? 'enemy' : 'hero';
-  playerUnit.unitKey = playerUnitKey;
-  enemyUnit.unitKey = enemyKey;
-  triggerTransform(playerUnit, playerUnit.targetForm, true);
-  triggerTransform(enemyUnit, enemyUnit.targetForm, false);
+function buildFormButtons() {
+  const info = UNIT_INFO[playerUnitKey];
+  document.getElementById('form-btns').innerHTML = info.formNames.map((n, i) =>
+    `<button id="btn-form-${i}" class="${i === playerUnit.targetForm ? 'active' : ''}" onclick="setForm(${i})">[${i + 1}] ${n}</button>`).join('');
+}
 
-  const btn = document.getElementById('btn-unit');
-  btn.textContent = playerUnitKey === 'hero' ? 'UNIT: 白/赤 バルキリー' : 'UNIT: 黒/紫 敵エース機';
-  btn.classList.toggle('enemy-active', playerUnitKey === 'enemy');
+window.cyclePose = function() {
+  poseMode = (poseMode + 1) % 3;
+  const btn = document.getElementById('btn-pose');
+  btn.textContent = POSE_LABELS[poseMode];
+  btn.classList.toggle('active', poseMode > 0);
+};
+
+window.selectUnit = function(key) {
+  if (!UNIT_INFO[key]) return;
+  playerUnitKey = key;
+  const enemyKey = key === 'enemy' ? 'hero' : 'enemy';
+  playerUnit.unitKey = key;
+  enemyUnit.unitKey = enemyKey;
+  playerUnit.currentForm = 0;
+  playerUnit.targetForm = 0;
+  playerUnit.morphT = 1.0;
+  playerUnit.fromVoxels = SURFACE_CACHE[key][0];
+  playerUnit.toVoxels = SURFACE_CACHE[key][0];
+  enemyUnit.fromVoxels = SURFACE_CACHE[enemyKey][enemyUnit.targetForm];
+  enemyUnit.toVoxels = SURFACE_CACHE[enemyKey][enemyUnit.targetForm];
+  buildFormButtons();
+  document.getElementById('unit-select').value = key;
   updateStatusText();
 };
 
+// ユニット選択肢の初期化と、URLパラメータ（?unit=castle&form=1）の適用
+{
+  const sel = document.getElementById('unit-select');
+  sel.innerHTML = Object.keys(UNIT_INFO).map(k =>
+    `<option value="${k}">${UNIT_INFO[k].name}</option>`).join('');
+  sel.value = playerUnitKey;
+  const q = new URLSearchParams(location.search);
+  const want = q.get('unit');
+  if (want && UNIT_INFO[want]) {
+    selectUnit(want);
+    const f = parseInt(q.get('form') || '0', 10);
+    if (f > 0 && f < SURFACE_CACHE[want].length) setForm(f);
+  }
+}
+
 window.toggleView = function() {
+  if (!isSpriteStackView && !sliceCanvases[playerUnitKey]) {
+    showBanner('このユニットは 3D 表示のみです');
+    return;
+  }
   isSpriteStackView = !isSpriteStackView;
   document.getElementById('game-canvas').style.display = isSpriteStackView ? 'none' : 'block';
   document.getElementById('stack-canvas').style.display = isSpriteStackView ? 'block' : 'none';
