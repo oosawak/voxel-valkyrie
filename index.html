@@ -601,7 +601,7 @@ function gridFromQuads(dims, dataB64) {
   return g;
 }
 // ロボット形態のボクセルを位置から脚・腕・前腕に分け、関節の回転中心を返す
-function computeParts(list) {
+function computeParts(list, pivot) {
   let minY = 1e9, maxY = -1e9, minX = 1e9, maxX = -1e9;
   for (const v of list) {
     if (v.y < minY) minY = v.y;
@@ -610,8 +610,9 @@ function computeParts(list) {
     if (v.x > maxX) maxX = v.x;
   }
   const H = maxY - minY, W = maxX - minX;
-  const hipY = minY + H * 0.40, shoulderY = minY + H * 0.80, elbowY = minY + H * 0.58;
-  const armX = W * 0.30;
+  const pv = pivot || {};
+  const hipY = minY + H * 0.40 + (pv.hip || 0), shoulderY = minY + H * 0.80 + (pv.shoulder || 0), elbowY = minY + H * 0.58 + (pv.elbow || 0);
+  const armX = W * 0.30 + (pv.armX || 0);
   return list.map(v => {
     if (v.y < hipY) return { part: v.x < 0 ? 'legL' : 'legR', py: hipY };
     if (Math.abs(v.x) > armX && v.y < shoulderY) {
@@ -629,7 +630,7 @@ if (window.EXTRA_MODELS) {
     MODELS[m.key] = m.forms.map(f => gridFromQuads(f.dims, f.data));
     SURFACE_CACHE[m.key] = MODELS[m.key].map(g => extractSurfaceVoxels(g, pal));
     UNIT_INFO[m.key] = { name: m.name + 'ロボット', formNames: m.formNames };
-    PART_CACHE[m.key] = m.forms.map((f, i) => (m.robotForms || [1]).includes(i) ? computeParts(SURFACE_CACHE[m.key][i]) : null);
+    PART_CACHE[m.key] = m.forms.map((f, i) => (m.robotForms || [1]).includes(i) ? computeParts(SURFACE_CACHE[m.key][i], m.pivot) : null);
   }
 }
 
@@ -709,9 +710,9 @@ enemyUnit.group.visible = false;
 const dummy = new THREE.Object3D();
 const tmpColor = new THREE.Color();
 
-// 関節ポーズ: 0=なし 1=歩行（脚と腕を前後に振る） 2=L字（前腕を肘で前に曲げる）
+// 関節ポーズ: 0=なし 1=歩行 2=構え（両腕を前へ） 3=敬礼（右腕） 4=L字（前腕を肘で前に曲げる）
 let poseMode = 0;
-const POSE_LABELS = ['ポーズ: なし', 'ポーズ: 歩行', 'ポーズ: L字'];
+const POSE_LABELS = ['ポーズ: なし', 'ポーズ: 歩行', 'ポーズ: 構え', 'ポーズ: 敬礼', 'ポーズ: L字'];
 function rotXAround(y, z, py, pz, ang) {
   const c = Math.cos(ang), s = Math.sin(ang);
   const dy = y - py, dz = z - pz;
@@ -729,12 +730,16 @@ function posePoint(p, part, t) {
   const side = part.part.endsWith('L') ? 1 : -1;
   let swing = 0;
   if (poseMode === 1) swing = -side * Math.sin(ph) * 0.30 * t;
-  else if (poseMode === 2) swing = 0.12 * t;
+  else if (poseMode === 2) swing = 1.35 * t;
+  else if (poseMode === 3) swing = side < 0 ? 1.35 * t : 0;
+  else if (poseMode === 4) swing = 0.12 * t;
   [y, z] = rotXAround(y, z, part.py, 0, swing);
   if (part.part.startsWith('fore')) {
     let bend = 0;
     if (poseMode === 1) bend = (0.55 + 0.15 * side * Math.sin(ph)) * t;
-    else if (poseMode === 2) bend = 1.5 * t;
+    else if (poseMode === 2) bend = 0.10 * t;
+    else if (poseMode === 3) bend = side < 0 ? 2.30 * t : 0;
+    else if (poseMode === 4) bend = 1.5 * t;
     let ey = part.ey, ez = 0;
     [ey, ez] = rotXAround(ey, ez, part.py, 0, swing);
     [y, z] = rotXAround(y, z, ey, ez, bend);
@@ -751,6 +756,7 @@ function updateMorphingUnit(unit, dt, slowMo) {
   const fromList = unit.fromVoxels;
   const toList = unit.toVoxels;
   const count = Math.max(fromList.length, toList.length);
+  const bob = poseMode === 1 ? Math.abs(Math.sin(performance.now() / 1000 * 7.0)) * 0.8 * t : 0;
 
   for (let i = 0; i < MAX_INSTANCES; i++) {
     if (i >= count) {
@@ -777,7 +783,7 @@ function updateMorphingUnit(unit, dt, slowMo) {
     }
     dummy.position.set(
       a.x + (bx - a.x) * t,
-      a.y + (by - a.y) * t,
+      a.y + (by - a.y) * t + bob,
       a.z + (bz - a.z) * t
     );
     dummy.scale.set(sc, sc, sc);
@@ -853,7 +859,7 @@ function buildFormButtons() {
 }
 
 window.cyclePose = function() {
-  poseMode = (poseMode + 1) % 3;
+  poseMode = (poseMode + 1) % 5;
   const btn = document.getElementById('btn-pose');
   btn.textContent = POSE_LABELS[poseMode];
   btn.classList.toggle('active', poseMode > 0);
