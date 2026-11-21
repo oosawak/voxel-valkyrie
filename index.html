@@ -712,31 +712,31 @@ const tmpColor = new THREE.Color();
 
 // 関節ポーズ: 0=なし 1=歩行 2=構え（両腕を前へ） 3=敬礼（右腕） 4=L字（前腕を肘で前に曲げる）
 let poseMode = 0;
-const POSE_LABELS = ['ポーズ: なし', 'ポーズ: 歩行', 'ポーズ: 構え', 'ポーズ: 敬礼', 'ポーズ: L字'];
+const POSE_LABELS = ['ポーズ: なし', 'ポーズ: 歩行', 'ポーズ: 構え', 'ポーズ: 敬礼', 'ポーズ: L字', 'ポーズ: 走行'];
 function rotXAround(y, z, py, pz, ang) {
   const c = Math.cos(ang), s = Math.sin(ang);
   const dy = y - py, dz = z - pz;
   return [py + dy * c - dz * s, pz + dy * s + dz * c];
 }
 function posePoint(p, part, t) {
-  const ph = performance.now() / 1000 * 7.0;
+  const ph = performance.now() / 1000 * (poseMode === 5 ? 11.5 : 7.0);
   let y = p.y, z = p.z;
   if (part.part === 'legL' || part.part === 'legR') {
-    if (poseMode !== 1) return p;
-    const ang = (part.part === 'legL' ? Math.sin(ph) : -Math.sin(ph)) * 0.45 * t;
+    if (poseMode !== 1 && poseMode !== 5) return p;
+    const ang = (part.part === 'legL' ? Math.sin(ph) : -Math.sin(ph)) * (poseMode === 5 ? 0.62 : 0.45) * t;
     [y, z] = rotXAround(y, z, part.py, 0, ang);
     return { x: p.x, y, z };
   }
   const side = part.part.endsWith('L') ? 1 : -1;
   let swing = 0;
-  if (poseMode === 1) swing = -side * Math.sin(ph) * 0.30 * t;
+  if (poseMode === 1 || poseMode === 5) swing = -side * Math.sin(ph) * (poseMode === 5 ? 0.42 : 0.30) * t;
   else if (poseMode === 2) swing = 1.35 * t;
   else if (poseMode === 3) swing = side < 0 ? 1.35 * t : 0;
   else if (poseMode === 4) swing = 0.12 * t;
   [y, z] = rotXAround(y, z, part.py, 0, swing);
   if (part.part.startsWith('fore')) {
     let bend = 0;
-    if (poseMode === 1) bend = (0.55 + 0.15 * side * Math.sin(ph)) * t;
+    if (poseMode === 1 || poseMode === 5) bend = ((poseMode === 5 ? 0.85 : 0.55) + 0.15 * side * Math.sin(ph)) * t;
     else if (poseMode === 2) bend = 0.10 * t;
     else if (poseMode === 3) bend = side < 0 ? 2.30 * t : 0;
     else if (poseMode === 4) bend = 1.5 * t;
@@ -756,7 +756,7 @@ function updateMorphingUnit(unit, dt, slowMo) {
   const fromList = unit.fromVoxels;
   const toList = unit.toVoxels;
   const count = Math.max(fromList.length, toList.length);
-  const bob = poseMode === 1 ? Math.abs(Math.sin(performance.now() / 1000 * 7.0)) * 0.8 * t : 0;
+  const bob = poseMode === 1 ? Math.abs(Math.sin(performance.now() / 1000 * 7.0)) * 0.8 * t : poseMode === 5 ? Math.abs(Math.sin(performance.now() / 1000 * 11.5)) * 1.3 * t : 0;
 
   for (let i = 0; i < MAX_INSTANCES; i++) {
     if (i >= count) {
@@ -859,7 +859,7 @@ function buildFormButtons() {
 }
 
 window.cyclePose = function() {
-  poseMode = (poseMode + 1) % 5;
+  poseMode = (poseMode + 1) % 6;
   const btn = document.getElementById('btn-pose');
   btn.textContent = POSE_LABELS[poseMode];
   btn.classList.toggle('active', poseMode > 0);
