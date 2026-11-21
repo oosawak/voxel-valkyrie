@@ -629,7 +629,7 @@ if (window.EXTRA_MODELS) {
     MODELS[m.key] = m.forms.map(f => gridFromQuads(f.dims, f.data));
     SURFACE_CACHE[m.key] = MODELS[m.key].map(g => extractSurfaceVoxels(g, pal));
     UNIT_INFO[m.key] = { name: m.name + 'ロボット', formNames: m.formNames };
-    PART_CACHE[m.key] = [null, computeParts(SURFACE_CACHE[m.key][1])];
+    PART_CACHE[m.key] = m.forms.map((f, i) => (m.robotForms || [1]).includes(i) ? computeParts(SURFACE_CACHE[m.key][i]) : null);
   }
 }
 
