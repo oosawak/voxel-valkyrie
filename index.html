@@ -230,6 +230,7 @@
       </span>
       <select id="unit-select" onchange="selectUnit(this.value)"></select>
       <button id="btn-pose" onclick="cyclePose()">ポーズ: なし</button>
+      <button id="btn-sortie" onclick="sortieSideScroll()">横スクロールへ出撃</button>
       <button id="btn-view" onclick="toggleView()">VIEW: 3D VOXEL</button>
       <button id="btn-slow" onclick="toggleSlowMo()">SLOW-MO: OFF</button>
       <button id="btn-cam" onclick="toggleCamera()">CAM: ORBIT</button>
@@ -863,6 +864,10 @@ window.cyclePose = function() {
   const btn = document.getElementById('btn-pose');
   btn.textContent = POSE_LABELS[poseMode];
   btn.classList.toggle('active', poseMode > 0);
+};
+
+window.sortieSideScroll = function() {
+  window.open('https://oosawak.github.io/voxel-transformers/game.html?unit=' + playerUnitKey, '_blank');
 };
 
 window.selectUnit = function(key) {
